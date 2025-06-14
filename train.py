@@ -1,50 +1,59 @@
 import sys
 import numpy as np
-import pandas as pd
+import pickle
+import matplotlib.pyplot as plt
 
-def read_dataset(dataset_file):
-    try:
-        return pd.read_csv(dataset_file)
-    except IOError:
-        print("Error: could not read thetas' file")
-        return None
+from common import estimate_price, read_dataset
 
-def write_tethas(tethas):
-    with open("thetas.txt", 'w') as file:
-       file.write(f"{tethas[0]} {tethas[1]}") 
+def write_tethas(tethas, mean, std):
+    with open("thetas.pkl", 'wb') as file:
+       pickle.dump({
+           "thetas": tethas,
+           "mean": mean,
+           "std": std
+       }, file)
 
-def estimate_price(mileage, thetas):
-    return thetas[0] + mileage * thetas[1]
-
-def normalise(thetas, mileage, mileage_scaled):
-    price_predict_scaled = estimate_price(mileage_scaled, thetas)
-
-    ml = [mileage[0], mileage[int(len(mileage) / 2) - 1]]
-    pr = [price_predict_scaled[0], price_predict_scaled[int(len(price_predict_scaled) / 2) - 1]]
-    
-    thetas[1] = (pr[1] - pr[0]) / (ml[1] - ml[0])
-    thetas[0] = pr[0] - thetas[1] * ml[0]
-    return thetas
-
-def train(dataset):
+def train(dataset,  learning_rate = 0.01, iter_nbr = 1000):
     mileage = np.array(dataset['km'])
+    mean = np.mean(mileage)
+    std = np.std(mileage)
+    mileage_std = (mileage - mean) / std
+
     price = np.array(dataset['price'])
+    thetas = np.zeros(2)
+    m = len(dataset)
 
-    thetas = [0.0, 0.0]
-    m = len(price)
-    mileage_scaled = (mileage - np.mean(mileage)) / np.std(mileage)
-    learning_rate = 0.2
-    iter_nbr = 100
+    plt.scatter(mileage, price, color='blue', label='Data points')
+    line, = plt.plot([], [], 'r-', linewidth=2, label='Current fit')
+    plt.title('Linear Regression Training')
+    plt.xlabel('Mileage')
+    plt.ylabel('Price')
+    plt.legend()
 
-    for _ in range(iter_nbr):
-        tmp = [0.0, 0.0]
-        tmp[0] = learning_rate / m * sum(estimate_price(mileage_scaled, thetas) - price)
-        tmp[1] = learning_rate / m * sum((estimate_price(mileage_scaled, thetas) - price) * mileage_scaled)
-        
-        thetas[0] -= tmp[0]
-        thetas[1] -= tmp[1]
+    plt.xlim(min(mileage) - 10000, max(mileage) + 10000)
+    plt.ylim(min(price) - 1000, max(price) + 1000)
 
-    return normalise(thetas, mileage, mileage_scaled)
+    plt.ion()
+    plt.show()
+
+    for idx in range(iter_nbr):
+        predictions = estimate_price(mileage_std, thetas)
+        errors = predictions - price
+        thetas[0] -= learning_rate * np.sum(errors) / m
+        thetas[1] -= learning_rate * np.sum(errors * mileage_std) / m
+
+        if not idx % 10:
+            X = np.array([min(mileage), max(mileage)])
+            X_std = (X - mean) / std
+            y = estimate_price(X_std, thetas)
+            line.set_data(X, y)
+            plt.draw()
+            plt.pause(0.03)
+    
+    plt.ioff()
+    plt.show()
+
+    return thetas, mean, std
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
@@ -58,7 +67,7 @@ if __name__ == "__main__":
         if len(dataset) == 0:
             print("Dataset is empty")
             sys.exit()
-        tethas = train(dataset)
-        write_tethas(tethas if not tethas is None else [0, 0])
+        tethas, mean, std = train(dataset)
+        write_tethas(tethas if not tethas is None else [0, 0], mean, std)
     else:
         print("Wrong number of arguments")
